@@ -143,4 +143,3 @@ predict.result <- predict(model.rf, validation.data[, -length(names(validation.d
 predict.result
 ```
 
-
