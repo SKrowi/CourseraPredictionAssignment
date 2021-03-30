@@ -1,0 +1,146 @@
+---
+title: "Coursera Prediction Assignment"
+author: "SK"
+date: "3/28/2021"
+output: html_document
+---
+
+# Context
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. 
+
+
+# Task
+Data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants was gathered. Participants were asked to perform barbell lifts correctly and incorrectly in 5 different ways. The goal of this project is to predict the manner in which participants did the exercise.
+
+The training data for this project:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+
+
+# Data Load & Preparation
+
+## Loading and Cleanung #DIV/0!
+
+```{r, message = FALSE, warning = FALSE}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(corrplot)
+library(tidyverse)
+
+train.url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+validation.url <-  "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+
+train.data <- read.csv(train.url, na.strings = c("#DIV/0!"), row.names = 1) # cleaning "#DIV/0!"
+validation.data <- read.csv(validation.url, na.strings = c("#DIV/0!"), row.names = 1)
+```
+
+## Removing NA Columns
+
+In a scientific context, I would propose being more careful with removing NA columns. For this course, it will make the prediction task at hand easier, so I will remove respective columns from the  validation set.
+
+```{r}
+train.data <- train.data[, colSums(is.na(train.data)) == 0] 
+validation.data <- validation.data[, colSums(is.na(validation.data)) == 0] 
+
+classe <- train.data$classe
+trainRemove <- grepl("^X|timestamp|window", names(train.data))
+train.data <- train.data[, !trainRemove]
+train.data <- train.data[, sapply(train.data, is.numeric)]
+train.data$classe <- classe
+
+testRemove <- grepl("^X|timestamp|window", names(validation.data))
+validation.data <- validation.data[, !testRemove]
+validation.data <- validation.data[, sapply(validation.data, is.numeric)]
+```
+
+
+## Data Partitioning
+
+Spliting the training data into training and testing partitions for improving the model fit, later performing an out-of-sample test 
+
+```{r}
+set.seed(1909) # for reproducibility
+training.sample <- createDataPartition(y = train.data$classe, p = 0.7, list = FALSE)
+training <- train.data[training.sample, ]
+testing <- train.data[-training.sample, ]
+```
+
+# Data Modeling
+
+## Model Building 
+
+Using Random Forest prediction, using 3-fold cross validation:
+```{r}
+control.parms <- trainControl(method = "cv", 3)
+model.rf <- train(classe ~ ., data = training, method = "rf", trControl = control.parms, ntree = 100)
+model.rf
+```
+
+GBM fir comparison:
+
+```{r, message = FALSE}
+model.gbm <- train(classe ~ ., data = training, method = "gbm", trControl = control.parms)
+model.gbm 
+```
+
+
+
+## Model Assessment 
+
+Estimation of model performance on the test data: Out of sample error
+```{r}
+# RF
+testing <- testing %>%
+  mutate(classe = as.factor(classe))
+
+predict.rf <- predict(model.rf, testing)
+cm.rf <- confusionMatrix(testing$classe, predict.rf)
+
+# GBM
+predict.gbm <- predict(model.gbm, testing)
+cm.gbm <- confusionMatrix(testing$classe, predict.gbm)
+
+ModelAssessment <- data.frame(
+  Model = c("RF", "GBM"),
+  Accuracy = rbind(cm.rf$overall[1], cm.gbm$overall[1]))
+
+
+print(ModelAssessment)
+
+# Calculation would be: accuracy = sum(predict.rf == testing$classe) / length(predict.rf)
+```
+
+
+The accuracy of the random forest model is higher, so I will continue on teh validation set with this model.
+
+## Which input variables were important?
+
+Just from curiosity I want to see, which variables were relevant in a good prediction model:
+**Commented out for faster rendering :-)**
+```{r}
+# rl.variables <- train(classe ~ ., data = training, method = "rf")
+# rl.variables <- varImp(rl.variables)
+# 
+# # Top 15 plot
+# plot(rl.variables, main = "Top 15 Most Explenatory Variables", top = 15)
+```
+
+
+# Prediction on Validation set
+
+Using the random forest model, I predict the following classes in the validation data seta:
+
+```{r}
+predict.result <- predict(model.rf, validation.data[, -length(names(validation.data))])
+predict.result
+```
+
+
